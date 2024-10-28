@@ -1,58 +1,67 @@
-use std::process::Command;
-use std::str;
+use core::str;
+use gethostname::gethostname;
 use std::fs;
+use std::process::exit;
+use users::get_current_username;
+use std::env;
 
-fn invokecommand(command: &str, params: &str) -> String {
-    let output = {
-        Command::new(command)
-            .args(params.split_whitespace())
-            .output()
-            .expect("Failed to retrieve info")
-    };
+const SYSTEM_BOARD: &str = "/sys/devices/virtual/dmi/id/board_name";
+const KERNEL: &str = "/proc/version";
 
-    let command = match str::from_utf8(&output.stdout) {
-        Ok(v) => v.trim(),
-        Err(e) => panic!("Invalid UTF-8 Sequence: {}", e)
-    };
+fn get_info_from_file(filename: &str) -> String {
+    let contents = fs::read_to_string(filename);
 
-    command.to_string()
-}
-
-fn get_kernel_version() -> String {
-   
-    let kernel_version = invokecommand("uname", "-r");
-
-    kernel_version.to_string()
+    match contents {
+        Ok(data) => data.trim().to_string(),
+        Err(e) => {
+            println!("Error reading file: {}", e);
+            exit(1)
+        }
+    }
 }
 
 fn get_title() -> String {
+    let user = match get_current_username() {
+        Some(uname) => uname,
+        None => {
+            println!("Unable to get username");
+            exit(1)
+        }
+    };
 
-    let user = invokecommand("id", "-un");
-    let hostname = invokecommand("hostname", "");
+    let hostname = gethostname();
 
-    let title = user.to_owned() + "@" + &hostname;
+    let title = user.to_string_lossy() + "@" + hostname.to_string_lossy();
 
     title.to_string()
-
 }
 
-fn get_system_board() -> String {
-    let contents = fs::read_to_string("/sys/devices/virtual/dmi/id/board_name")
-        .expect("Unable to read file");
-    
-    contents
+fn get_env(env: &str) -> String {
+    let term = env;
+
+    match env::var(term) {
+        Ok(term) => term,
+        Err(_) => {
+            println!("Unable to read $TERM");
+            exit(1)
+        }
+    }
 }
 
 fn main() {
     let os = os_info::get();
-    let returned_kernel = get_kernel_version();
-    let returned_title = get_title();
-    let returned_system = get_system_board();
+    let kernel_info = get_info_from_file(KERNEL);
+    let title = get_title();
+    let system_info = get_info_from_file(SYSTEM_BOARD);
+    let terminal = get_env("TERM_PROGRAM");
+    let wm = get_env("XDG_CURRENT_DESKTOP");
 
-    println!("{}",{returned_title});
-    println!("{}","-----------");
+    println!("{}", { title });
+    println!("{}", "-----------");
     println!("{}       {}", "OS:", os.os_type());
+    println!("{}   {}", "Kernel:", { kernel_info });
     println!("{}     {}", "Arch:", os.architecture().unwrap_or("Unknown"));
-    println!("{}   {}", "Kernel:", {returned_kernel});
-    println!("{}   {}", "System:", {returned_system});
+    println!("{}   {}", "System:", { system_info });
+    println!("{} {}", "Terminal:", { terminal });
+    println!("{}       {}", "WM:", { wm });
 }
